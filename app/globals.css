@@ -1,0 +1,19 @@
+@import url('https://cdnjs.cloudflare.com/ajax/libs/remixicon/4.5.0/remixicon.min.css');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --hero-coral: 14 116 144;
+    --hero-blue: 59 130 246;
+    --hero-emerald: 16 185 129;
+    --hero-violet: 139 92 246;
+    --hero-amber: 245 158 11;
+    --hero-rose: 244 63 94;
+    --playful-bg: 248 250 252;
+    --playful-pattern: radial-gradient(circle at 20% 80%, rgba(59, 130, 246, 0.06) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(16, 185, 129, 0.04) 0%, transparent 45%);
+  }
+}
