@@ -15,7 +15,7 @@ import TeamTasksOverview from '@/components/dashboard/TeamTasksOverview';
 import Link from 'next/link';
 
 export default function Home() {
-  const kpiData = [
+  const kpiData: { title: string; value: string; change: string; trend: 'up' | 'down'; subtitle: string }[] = [
     { title: 'Total Leads', value: '342', change: '+12.5%', trend: 'up', subtitle: 'Bulan Ini' },
     { title: 'Nilai Pipeline Aktif', value: 'Rp 2,4M', change: '+8.3%', trend: 'up', subtitle: 'Kuartal Ini' },
     { title: 'Closing Bulan Ini', value: 'Rp 580Jt', change: '+15.2%', trend: 'up', subtitle: 'Perkiraan' },

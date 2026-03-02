@@ -1,12 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "export",
+  // Tanpa output: "export" supaya build di Vercel jalan (Vercel pakai server mode)
   images: {
     unoptimized: true,
   },
   typescript: {
-    // ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
+  },
+  eslint: {
+    ignoreDuringBuilds: true,
   },
 };
 

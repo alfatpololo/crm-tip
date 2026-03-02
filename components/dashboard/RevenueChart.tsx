@@ -42,7 +42,7 @@ export default function RevenueChart({ embedded }: { embedded?: boolean }) {
               borderRadius: '8px',
               color: '#fff'
             }}
-            formatter={(value: number) => [`Rp ${(value / 1000000).toFixed(0)}Jt`, 'Pendapatan']}
+            formatter={(value: number | undefined) => [`Rp ${((value ?? 0) / 1000000).toFixed(0)}Jt`, 'Pendapatan']}
           />
           <Area 
             type="monotone" 
