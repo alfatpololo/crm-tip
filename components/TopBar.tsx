@@ -1,6 +1,20 @@
 'use client';
 
+import { useAuth } from '@/contexts/AuthContext';
+
+const roleLabels: Record<string, string> = {
+  superadmin: 'Superadmin',
+  koordinator: 'Koordinator',
+  management: 'Management',
+  sales_officer: 'Sales Officer',
+  staff: 'Staff',
+};
+
 export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
+  const { user, role, signOut } = useAuth();
+  const displayName = user?.email ? user.email.split('@')[0] : 'User';
+  const initial = displayName.slice(0, 2).toUpperCase();
+
   return (
     <header className="h-16 bg-white/90 backdrop-blur-sm border-b border-gray-200/80 flex items-center justify-between px-6 shadow-sm shadow-gray-100">
       <button
@@ -22,24 +36,22 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-amber-50 hover:text-amber-600 transition-colors relative cursor-pointer text-gray-500">
-          <i className="ri-notification-3-line text-xl w-5 h-5 flex items-center justify-center"></i>
-          <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
-        </button>
-
-        <button className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-violet-50 hover:text-violet-600 transition-colors cursor-pointer text-gray-500">
-          <i className="ri-settings-3-line text-xl w-5 h-5 flex items-center justify-center"></i>
-        </button>
-
-        <div className="flex items-center gap-3 ml-2 pl-3 border-l border-gray-200/80 cursor-pointer">
+        <div className="flex items-center gap-3 ml-2 pl-3 border-l border-gray-200/80">
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 via-violet-500 to-purple-600 flex items-center justify-center text-white font-semibold text-sm shadow-md shadow-indigo-200/50">
-            JD
+            {initial}
           </div>
           <div className="hidden md:block">
-            <div className="text-sm font-medium text-gray-900">John Doe</div>
-            <div className="text-xs text-gray-500">Direktur Penjualan</div>
+            <div className="text-sm font-medium text-gray-900">{user?.email ?? displayName}</div>
+            <div className="text-xs text-gray-500">{roleLabels[role] ?? role}</div>
           </div>
         </div>
+        <button
+          onClick={() => signOut()}
+          className="p-2 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors cursor-pointer text-gray-500"
+          title="Keluar"
+        >
+          <i className="ri-logout-box-r-line text-xl w-5 h-5 flex items-center justify-center"></i>
+        </button>
       </div>
     </header>
   );

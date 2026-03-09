@@ -13,6 +13,7 @@ export type LaporanPekerjaan = {
   id: string;
   tanggal: string;
   pic: string;
+  product?: string;
   tipeAktivitas: string;
   activityLabel: string;
   sectionLabel: string;
@@ -24,17 +25,21 @@ export type LaporanPekerjaan = {
 
 export const LAPORAN_STORAGE_KEY = 'crm-tip-laporan-pekerjaan';
 
+export type ProductOption = { value: string; label: string };
+
 type Props = {
   activityOptions: ActivityOption[];
   teamMembers: string[];
+  products?: ProductOption[];
   onLaporanChange?: (laporan: LaporanPekerjaan[]) => void;
 };
 
-export default function InputLaporanPekerjaan({ activityOptions, teamMembers, onLaporanChange }: Props) {
+export default function InputLaporanPekerjaan({ activityOptions, teamMembers, products = [], onLaporanChange }: Props) {
   const [laporanList, setLaporanList] = useState<LaporanPekerjaan[]>([]);
   const [form, setForm] = useState({
     tanggal: new Date().toISOString().slice(0, 10),
     pic: '',
+    product: '',
     tipeAktivitas: '',
     realisasi: '',
     catatan: '',
@@ -74,6 +79,7 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
       id: `lp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       tanggal: form.tanggal,
       pic: form.pic,
+      product: form.product || undefined,
       tipeAktivitas: form.tipeAktivitas,
       activityLabel: opt.activityLabel,
       sectionLabel: opt.sectionLabel,
@@ -87,6 +93,7 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
     setForm({
       tanggal: new Date().toISOString().slice(0, 10),
       pic: form.pic,
+      product: form.product,
       tipeAktivitas: '',
       realisasi: '',
       catatan: '',
@@ -166,6 +173,23 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
                   ))}
                 </select>
               </div>
+              {products.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Produk</label>
+                  <select
+                    value={form.product}
+                    onChange={(e) => setForm((f) => ({ ...f, product: e.target.value }))}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  >
+                    <option value="">Pilih produk (opsional)</option>
+                    {products.map((p) => (
+                      <option key={p.value} value={p.value}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">Tipe Aktivitas</label>
                 <div className="flex gap-2">
@@ -267,6 +291,7 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
               <tr className="bg-gray-50/80">
                 <th className="text-left py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Tanggal</th>
                 <th className="text-left py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">PIC</th>
+                <th className="text-left py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Produk</th>
                 <th className="text-left py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Section</th>
                 <th className="text-left py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Kegiatan</th>
                 <th className="text-right py-3 px-5 text-xs font-semibold text-gray-500 uppercase tracking-wider">Realisasi</th>
@@ -277,7 +302,7 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
             <tbody className="divide-y divide-gray-100">
               {filteredLaporan.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-gray-500 text-sm">
+                  <td colSpan={8} className="py-12 text-center text-gray-500 text-sm">
                     Belum ada laporan. Klik &quot;Tambah Laporan&quot; untuk menginput.
                   </td>
                 </tr>
@@ -290,6 +315,7 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, on
                         {l.pic}
                       </span>
                     </td>
+                    <td className="py-3.5 px-5 text-sm text-gray-700">{l.product || '–'}</td>
                     <td className="py-3.5 px-5 text-sm text-gray-600">{l.sectionLabel}</td>
                     <td className="py-3.5 px-5 text-sm text-gray-800 max-w-[200px] truncate" title={l.activityLabel}>
                       {l.activityLabel}

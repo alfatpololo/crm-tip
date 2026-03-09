@@ -31,6 +31,22 @@ export type TaskRecord = {
   leadId?: number;
   createdAt: string;
   createdBy?: string;
+  /** Target nilai (dari koordinator) */
+  targetValue?: number;
+  /** Satuan target (e.g. Konten, Kunjungan) */
+  satuan?: string;
+  /** Realisasi progress yang di-input staff */
+  progressRealisasi?: number;
+  /** Catatan progress terakhir */
+  progressNote?: string;
+  /** Link bukti (URL) yang di-attach staff */
+  evidenceLinks?: string[];
+  /** Catatan bukti */
+  evidenceNote?: string;
+  /** Waktu koordinator setuju / checklist */
+  approvedAt?: string;
+  /** User id koordinator yang approve */
+  approvedBy?: string;
 };
 
 export function loadTasksFromStorage(): TaskRecord[] {
