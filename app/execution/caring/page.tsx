@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import DashboardLayout from '@/components/DashboardLayout';
 import PageHero from '@/components/ui/PageHero';
 import PageCard from '@/components/ui/PageCard';
@@ -54,6 +55,9 @@ export default function CaringPage() {
     nextAction: '',
     tanggalFu: '',
   });
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -80,6 +84,94 @@ export default function CaringPage() {
   useEffect(() => {
     fetchList();
   }, [fetchList]);
+
+  const exportToExcel = useCallback(() => {
+    if (list.length === 0) return;
+    setExporting(true);
+    try {
+      const headers = [...HEADERS];
+      const rows = list.map((r, i) => [
+        i + 1,
+        r.picSales,
+        r.namaToko,
+        r.picToko ?? '',
+        r.tanggalCall,
+        r.statusCall ?? '',
+        r.hasil ?? '',
+        r.nextAction ?? '',
+        r.tanggalFu ?? '',
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Caring');
+      XLSX.writeFile(wb, `caring-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }, [list]);
+
+  const handleImportExcel = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file || isCoordinator) return;
+      setImporting(true);
+      setError(null);
+      try {
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        if (rows.length < 2) {
+          setError('File kosong atau hanya header. Minimal 1 baris data.');
+          return;
+        }
+        const header = (rows[0] as (string | number)[]).map((h) => String(h));
+        const idx = (name: string) => header.indexOf(name);
+        const namaTokoIdx = idx('Nama Toko');
+        const tanggalCallIdx = idx('Tanggal Call');
+        if (namaTokoIdx < 0 || tanggalCallIdx < 0) {
+          setError('Kolom wajib: Nama Toko, Tanggal Call. Gunakan file hasil Export.');
+          return;
+        }
+        const items = rows.slice(1).map((row) => {
+          const get = (i: number) => (row[i] != null ? String(row[i]).trim() : '');
+          return {
+            namaToko: get(namaTokoIdx),
+            picToko: header.includes('PIC Toko') ? get(idx('PIC Toko')) : undefined,
+            tanggalCall: get(tanggalCallIdx),
+            statusCall: header.includes('Status Call') ? get(idx('Status Call')) : undefined,
+            hasil: header.includes('Hasil') ? get(idx('Hasil')) : undefined,
+            nextAction: header.includes('Next Action') ? get(idx('Next Action')) : undefined,
+            tanggalFu: header.includes('Tanggal FU') ? get(idx('Tanggal FU')) : undefined,
+          };
+        }).filter((i) => i.namaToko && i.tanggalCall);
+
+        if (items.length === 0) {
+          setError('Tidak ada baris valid. Nama Toko dan Tanggal Call wajib.');
+          return;
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch('/api/caring/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ items }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || 'Gagal import');
+          return;
+        }
+        fetchList();
+      } catch {
+        setError('Gagal memproses file. Pastikan format .xlsx.');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [isCoordinator, fetchList]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -242,6 +334,35 @@ export default function CaringPage() {
         )}
 
         <PageCard accent="cyan" icon="ri-customer-service-2-line" title={isCoordinator ? 'Data Caring (Semua PIC)' : 'Data Caring Saya'}>
+          <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+            <input
+              ref={importFileRef}
+              type="file"
+              accept=".xlsx,.xls"
+              className="hidden"
+              onChange={handleImportExcel}
+            />
+            {!isCoordinator && (
+              <button
+                type="button"
+                onClick={() => importFileRef.current?.click()}
+                disabled={importing}
+                className="px-4 py-2 border border-cyan-500 text-cyan-700 hover:bg-cyan-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {importing ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-upload-line"></i>}
+                Import dari Excel
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={exportToExcel}
+              disabled={exporting || list.length === 0}
+              className="px-4 py-2 border border-cyan-500 text-cyan-700 hover:bg-cyan-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+            >
+              {exporting ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-excel-2-line"></i>}
+              Export ke Excel
+            </button>
+          </div>
           {loading ? (
             <div className="py-12 flex justify-center">
               <i className="ri-loader-4-line animate-spin text-3xl text-teal-600"></i>

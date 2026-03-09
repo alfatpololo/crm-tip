@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import DashboardLayout from '@/components/DashboardLayout';
 import PageHero from '@/components/ui/PageHero';
 import PageCard from '@/components/ui/PageCard';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import {
   TASK_PRIORITY,
   loadTasksFromStorage,
@@ -48,6 +49,7 @@ export default function TasksPage() {
   }, [user?.email, users]);
 
   const [tasks, setTasks] = useState<TaskRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [progressModalTask, setProgressModalTask] = useState<TaskRecord | null>(null);
   const [progressForm, setProgressForm] = useState({ realisasi: '', status: '', note: '' });
@@ -263,6 +265,155 @@ export default function TasksPage() {
     return true;
   });
 
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const handleImportExcel = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file || !isCoordinator) return;
+      setImporting(true);
+      try {
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1 }) as (string | number)[][];
+        if (rows.length < 2) {
+          setError('File kosong atau hanya header. Minimal 1 baris data.');
+          return;
+        }
+        const header = rows[0];
+        const tugasIdx = header.indexOf('Tugas');
+        const dueIdx = header.indexOf('Jatuh Tempo');
+        const picIdx = header.indexOf('PIC');
+        if (tugasIdx < 0 || dueIdx < 0 || picIdx < 0) {
+          setError('Format Excel tidak sesuai. Gunakan file hasil Export atau kolom: Tugas, Jatuh Tempo, PIC.');
+          return;
+        }
+        const leadIdx = header.indexOf('Lead / Perusahaan');
+        const productIdx = header.indexOf('Produk');
+        const aktivitasIdx = header.indexOf('Aktivitas');
+        const prioritasIdx = header.indexOf('Prioritas');
+        const statusIdx = header.indexOf('Status');
+        const catatanIdx = header.indexOf('Catatan');
+        const targetIdx = header.indexOf('Target');
+        const satuanIdx = header.indexOf('Satuan');
+        const progressNoteIdx = header.indexOf('Catatan Progress');
+        const progressRealisasiIdx = header.indexOf('Progress Realisasi');
+
+        const tasksToImport = rows.slice(1).map((row) => {
+          const get = (i: number) => (row[i] != null ? String(row[i]).trim() : '');
+          const getNum = (i: number) => {
+            const v = row[i];
+            if (v == null) return undefined;
+            const n = Number(v);
+            return isNaN(n) ? undefined : n;
+          };
+          let status = get(statusIdx).toLowerCase();
+          if (status === 'terlambat') status = 'overdue';
+          else if (status === 'selesai') status = 'done';
+          else if (!status) status = 'pending';
+          return {
+            title: get(tugasIdx) || 'Tugas',
+            leadCompany: leadIdx >= 0 ? get(leadIdx) || undefined : undefined,
+            product: productIdx >= 0 ? get(productIdx) || 'MKASIR' : 'MKASIR',
+            aktivitas: aktivitasIdx >= 0 ? get(aktivitasIdx) || 'digital' : 'digital',
+            aktivitasLabel: aktivitasIdx >= 0 ? get(aktivitasIdx) || undefined : undefined,
+            pic: get(picIdx) || 'Staff',
+            dueDate: dueIdx >= 0 ? get(dueIdx) || new Date().toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+            priority: prioritasIdx >= 0 ? get(prioritasIdx).toLowerCase() || 'sedang' : 'sedang',
+            status,
+            catatan: catatanIdx >= 0 ? get(catatanIdx) || undefined : undefined,
+            targetValue: targetIdx >= 0 ? getNum(targetIdx) : undefined,
+            satuan: satuanIdx >= 0 ? get(satuanIdx) || undefined : undefined,
+            progressNote: progressNoteIdx >= 0 ? get(progressNoteIdx) || undefined : undefined,
+            progressRealisasi: progressRealisasiIdx >= 0 ? getNum(progressRealisasiIdx) : undefined,
+          };
+        }).filter((t) => t.title && t.dueDate);
+
+        if (tasksToImport.length === 0) {
+          setError('Tidak ada baris valid. Kolom Tugas dan Jatuh Tempo wajib.');
+          return;
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch('/api/tasks/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ tasks: tasksToImport }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || 'Gagal import');
+          return;
+        }
+        setError(null);
+        loadTasks();
+      } catch (err) {
+        setError('Gagal memproses file. Pastikan format .xlsx.');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [isCoordinator, loadTasks]
+  );
+
+  const exportToExcel = useCallback(() => {
+    if (filteredTasks.length === 0) return;
+    setExporting(true);
+    try {
+      const headers = [
+        'No',
+        'Tugas',
+        'Lead / Perusahaan',
+        'Produk',
+        'Aktivitas',
+        'PIC',
+        'Progress Realisasi',
+        'Target',
+        'Satuan',
+        'Catatan Progress',
+        'Jatuh Tempo',
+        'Prioritas',
+        'Status',
+        'Catatan',
+        'Link Bukti',
+        'Disetujui',
+        'Tanggal Buat',
+      ];
+      const rows = filteredTasks.map((t, i) => [
+        i + 1,
+        t.title ?? '',
+        t.leadCompany ?? '',
+        t.product ?? '',
+        t.aktivitasLabel ?? '',
+        t.pic ?? '',
+        t.progressRealisasi ?? '',
+        t.targetValue ?? '',
+        t.satuan ?? '',
+        t.progressNote ?? '',
+        t.dueDate ?? '',
+        t.priority ?? '',
+        t.status === 'overdue' ? 'Terlambat' : t.status === 'done' ? 'Selesai' : 'Pending',
+        t.catatan ?? '',
+        Array.isArray(t.evidenceLinks) ? t.evidenceLinks.join('; ') : '',
+        t.approvedAt ?? '',
+        t.createdAt ?? '',
+      ]);
+      const wsData = [headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Tugas');
+      const fileName = `tugas-dan-tindak-lanjut-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    } finally {
+      setExporting(false);
+    }
+  }, [filteredTasks]);
+
   return (
     <DashboardLayout>
       <div className="space-y-8">
@@ -324,6 +475,12 @@ export default function TasksPage() {
         )}
 
         <PageCard accent="amber" icon="ri-task-line"           title={isCoordinator ? 'Daftar Tugas' : 'Tugas Saya'}>
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm flex items-center justify-between gap-2">
+              <span>{error}</span>
+              <button type="button" onClick={() => setError(null)} className="text-red-500 hover:text-red-700" aria-label="Tutup">×</button>
+            </div>
+          )}
           <p className="text-sm text-gray-600 mb-4">
             {isCoordinator ? 'Tugas yang Anda assign ke PIC. Staff update progress dan upload bukti di halaman detail tugas.' : 'Tugas yang koordinator berikan ke Anda. Klik judul tugas untuk buka detail: di sana Anda bisa update progress (realisasi, status) dan upload bukti.'}
           </p>
@@ -358,6 +515,44 @@ export default function TasksPage() {
                   <option key={p} value={p}>{p}</option>
                 ))}
               </select>
+              <input
+                ref={importFileRef}
+                type="file"
+                accept=".xlsx,.xls"
+                className="hidden"
+                onChange={handleImportExcel}
+              />
+              <button
+                type="button"
+                onClick={() => importFileRef.current?.click()}
+                disabled={importing}
+                className="px-4 py-2 border border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+              >
+                {importing ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-upload-line"></i>}
+                Import dari Excel
+              </button>
+              <button
+                type="button"
+                onClick={exportToExcel}
+                disabled={exporting || filteredTasks.length === 0}
+                className="px-4 py-2 border border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exporting ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-excel-2-line"></i>}
+                Export ke Excel
+              </button>
+            </div>
+          )}
+          {!isCoordinator && (
+            <div className="flex justify-end gap-2 mb-4">
+              <button
+                type="button"
+                onClick={exportToExcel}
+                disabled={exporting || filteredTasks.length === 0}
+                className="px-4 py-2 border border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exporting ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-excel-2-line"></i>}
+                Export ke Excel
+              </button>
             </div>
           )}
           <div className="overflow-x-auto">

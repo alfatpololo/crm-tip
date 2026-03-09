@@ -1,13 +1,14 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import DashboardLayout from '@/components/DashboardLayout';
 import PageHero from '@/components/ui/PageHero';
 import PageCard from '@/components/ui/PageCard';
 import { useTeamMembers, teamMemberDisplay } from '@/lib/useTeamAndProducts';
 import { useProducts } from '@/lib/useTeamAndProducts';
-
-const CONTENT_PLANNER_KEY = 'crm-tip-content-planner';
+import { supabase } from '@/lib/supabase/client';
 
 const STATUS_OPTIONS = [
   { value: 'concept', label: 'Concept' },
@@ -71,21 +72,113 @@ const defaultForm = (): Omit<ContentPlanEntry, 'id' | 'createdAt'> => ({
   accToPosting: false,
 });
 
-function loadPlans(): ContentPlanEntry[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(CONTENT_PLANNER_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
 export default function ContentPlannerPage() {
+  const router = useRouter();
   const { users } = useTeamMembers();
   const { products } = useProducts();
   const [plans, setPlans] = useState<ContentPlanEntry[]>([]);
   const [form, setForm] = useState(defaultForm());
+  const [loading, setLoading] = useState(true);
+  const [submitLoading, setSubmitLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const exportToExcel = useCallback(() => {
+    if (plans.length === 0) return;
+    setExporting(true);
+    try {
+      const headers = ['No', 'Tanggal', 'Aplikasi', 'Status', 'PIC', 'Topic', 'Goals', 'Pillar', 'Type', 'Link', 'Caption', 'Revisi', 'Acc to Posting'];
+      const rows = plans.map((p, i) => [
+        i + 1,
+        p.rencanaPosting,
+        p.namaAplikasi,
+        p.status,
+        p.pic,
+        p.topic ?? '',
+        p.goalsContent ?? '',
+        p.contentPillar ?? '',
+        p.typeOfContent ?? '',
+        p.link ?? '',
+        (p.caption ?? '').slice(0, 200),
+        p.revisi ?? '',
+        p.accToPosting ? 'Ya' : 'Tidak',
+      ]);
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Content Planner');
+      XLSX.writeFile(wb, `content-planner-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } finally {
+      setExporting(false);
+    }
+  }, [plans]);
+
+  const handleImportExcel = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = '';
+      if (!file) return;
+      setImporting(true);
+      setError(null);
+      try {
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const rows = XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        if (rows.length < 2) {
+          setError('File kosong atau hanya header. Minimal 1 baris data.');
+          return;
+        }
+        const header = (rows[0] as (string | number)[]).map((h) => String(h));
+        const idx = (name: string) => header.indexOf(name);
+        if (idx('Aplikasi') < 0 || idx('PIC') < 0) {
+          setError('Kolom wajib: Aplikasi, PIC. Gunakan file hasil Export.');
+          return;
+        }
+        const plansToImport = rows.slice(1).map((row) => {
+          const get = (i: number) => (row[i] != null ? String(row[i]).trim() : '');
+          return {
+            namaAplikasi: get(idx('Aplikasi')),
+            rencanaPosting: get(idx('Tanggal')) || new Date().toISOString().slice(0, 10),
+            status: get(idx('Status')) || 'concept',
+            pic: get(idx('PIC')),
+            topic: get(idx('Topic')),
+            goalsContent: get(idx('Goals')) || 'awareness',
+            contentPillar: get(idx('Pillar')) || 'edukasi',
+            typeOfContent: get(idx('Type')) || 'feed',
+            link: get(idx('Link')),
+            caption: get(idx('Caption')),
+            revisi: get(idx('Revisi')),
+            accToPosting: (get(idx('Acc to Posting')) || '').toLowerCase() === 'ya',
+          };
+        }).filter((p) => p.namaAplikasi && p.pic);
+
+        if (plansToImport.length === 0) {
+          setError('Tidak ada baris valid. Aplikasi dan PIC wajib.');
+          return;
+        }
+
+        const { data: { session } } = await supabase.auth.getSession();
+        const token = session?.access_token;
+        const res = await fetch('/api/content-planner/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ plans: plansToImport }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || 'Gagal import');
+          return;
+        }
+        fetchPlans();
+      } catch {
+        setError('Gagal memproses file. Pastikan format .xlsx.');
+      } finally {
+        setImporting(false);
+      }
+    },
+    [fetchPlans]
+  );
 
   const productOptions = useMemo(() => (products.length > 0 ? products : [{ key: 'mkasir', name: 'MKASIR' }, { key: 'disiplinku', name: 'DISIPLINKU' }]), [products]);
   const picOptions = useMemo(() => {
@@ -93,27 +186,71 @@ export default function ContentPlannerPage() {
     return ['Alfath', 'Nina', 'Ilham', 'Roby', 'Radi', 'Jemi'].map((name) => ({ value: name, label: name }));
   }, [users]);
 
-  useEffect(() => {
-    setPlans(loadPlans());
+  const fetchPlans = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch('/api/content-planner', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const json = await res.json();
+      if (res.ok && Array.isArray(json.plans)) {
+        setPlans(json.plans);
+      } else {
+        setPlans([]);
+        if (json.error) setError(json.error);
+      }
+    } catch {
+      setPlans([]);
+      setError('Gagal memuat data.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    const interval = setInterval(() => setPlans(loadPlans()), 2000);
-    return () => clearInterval(interval);
-  }, []);
+    fetchPlans();
+  }, [fetchPlans]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.namaAplikasi || !form.pic) return;
-    const entry: ContentPlanEntry = {
-      ...form,
-      id: `cp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      createdAt: new Date().toISOString(),
-    };
-    const next = [entry, ...plans];
-    setPlans(next);
-    if (typeof window !== 'undefined') localStorage.setItem(CONTENT_PLANNER_KEY, JSON.stringify(next));
-    setForm(defaultForm());
+    setSubmitLoading(true);
+    setError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch('/api/content-planner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          namaAplikasi: form.namaAplikasi,
+          rencanaPosting: form.rencanaPosting,
+          status: form.status,
+          pic: form.pic,
+          topic: form.topic,
+          goalsContent: form.goalsContent,
+          contentPillar: form.contentPillar,
+          typeOfContent: form.typeOfContent,
+          referenceFileName: form.referenceFileName,
+          link: form.link,
+          caption: form.caption,
+          revisi: form.revisi,
+          accToPosting: form.accToPosting,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json.item) {
+        setPlans((prev) => [json.item, ...prev]);
+        setForm(defaultForm());
+      } else {
+        setError(json.error || 'Gagal menyimpan.');
+      }
+    } catch {
+      setError('Gagal menyimpan.');
+    } finally {
+      setSubmitLoading(false);
+    }
   };
 
   return (
@@ -130,6 +267,9 @@ export default function ContentPlannerPage() {
           <div className="lg:col-span-1">
             <PageCard accent="amber" icon="ri-add-circle-line" title="Tambah Rencana">
               <form onSubmit={handleSubmit} className="space-y-4">
+                {error && (
+                  <div className="p-3 rounded-lg bg-red-50 text-red-700 text-sm">{error}</div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Nama Aplikasi</label>
                   <select
@@ -255,8 +395,15 @@ export default function ContentPlannerPage() {
                   />
                   <label htmlFor="accToPosting" className="text-sm font-medium text-gray-700">Acc to Posting</label>
                 </div>
-                <button type="submit" className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-sm">
-                  Simpan Rencana
+                <button type="submit" disabled={submitLoading} className="w-full py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-semibold rounded-xl text-sm flex items-center justify-center gap-2">
+                  {submitLoading ? (
+                    <>
+                      <i className="ri-loader-4-line animate-spin text-lg"></i>
+                      Menyimpan...
+                    </>
+                  ) : (
+                    'Simpan Rencana'
+                  )}
                 </button>
               </form>
             </PageCard>
@@ -264,7 +411,39 @@ export default function ContentPlannerPage() {
 
           <div className="lg:col-span-2">
             <PageCard accent="slate" icon="ri-calendar-check-line" title="Daftar Rencana Posting">
+              <div className="flex flex-wrap items-center justify-end gap-2 mb-4">
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept=".xlsx,.xls"
+                  className="hidden"
+                  onChange={handleImportExcel}
+                />
+                <button
+                  type="button"
+                  onClick={() => importFileRef.current?.click()}
+                  disabled={importing}
+                  className="px-4 py-2 border border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                >
+                  {importing ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-upload-line"></i>}
+                  Import dari Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={exportToExcel}
+                  disabled={exporting || plans.length === 0}
+                  className="px-4 py-2 border border-amber-500 text-amber-700 hover:bg-amber-50 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                >
+                  {exporting ? <i className="ri-loader-4-line animate-spin"></i> : <i className="ri-file-excel-2-line"></i>}
+                  Export ke Excel
+                </button>
+              </div>
               <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+                {loading ? (
+                  <div className="py-12 flex justify-center">
+                    <i className="ri-loader-4-line animate-spin text-3xl text-amber-600"></i>
+                  </div>
+                ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 sticky top-0">
                     <tr>
@@ -283,7 +462,11 @@ export default function ContentPlannerPage() {
                       </tr>
                     ) : (
                       plans.map((p) => (
-                        <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                        <tr
+                          key={p.id}
+                          onClick={() => router.push(`/execution/content-planner/${p.id}`)}
+                          className="border-t border-gray-100 hover:bg-amber-50/80 cursor-pointer"
+                        >
                           <td className="py-2 px-2 text-gray-700">{p.rencanaPosting}</td>
                           <td className="py-2 px-2 font-medium text-gray-900">{p.namaAplikasi}</td>
                           <td className="py-2 px-2"><span className="capitalize">{p.status}</span></td>
@@ -295,6 +478,7 @@ export default function ContentPlannerPage() {
                     )}
                   </tbody>
                 </table>
+                )}
               </div>
             </PageCard>
           </div>
