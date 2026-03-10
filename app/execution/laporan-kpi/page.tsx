@@ -131,8 +131,8 @@ export default function LaporanKPIPage() {
                 {[...laporan]
                   .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
                   .slice(0, 50)
-                  .map((lp) => (
-                    <tr key={lp.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                  .map((lp, index) => (
+                    <tr key={lp.id ? `${lp.id}-${index}` : `lp-row-${index}`} className="border-t border-gray-100 hover:bg-gray-50/50">
                       <td className="py-2 px-2 text-gray-700">{lp.tanggal}</td>
                       <td className="py-2 px-2 font-medium text-gray-900">{lp.pic}</td>
                       <td className="py-2 px-2 text-gray-600">{chanelDisplay(lp.sectionLabel)}</td>

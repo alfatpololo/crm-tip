@@ -18,8 +18,17 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
   const isSuperadmin = role === 'superadmin';
 
   const navigation = useMemo(() => {
+    const dashboardSection = {
+      section: 'DASHBOARD',
+      items: [
+        { name: 'Dashboard', href: '/', icon: 'ri-dashboard-line' },
+        { name: 'Input Task KPI', href: '/execution/input-task-kpi', icon: 'ri-checkbox-circle-line' },
+        { name: 'Laporan KPI', href: '/execution/laporan-kpi', icon: 'ri-file-chart-line' },
+      ] as NavItem[],
+    };
     if (isSuperadmin) {
       return [
+        dashboardSection,
         { section: 'ADMIN', items: [
           { name: 'Kelola User', href: '/management/kelola-user', icon: 'ri-user-settings-line' },
           { name: 'Kelola Produk', href: '/management/kelola-produk', icon: 'ri-box-3-line' },
@@ -37,7 +46,20 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           { name: 'Caring', href: '/execution/caring', icon: 'ri-customer-service-2-line' },
           { name: 'Content Planner', href: '/execution/content-planner', icon: 'ri-calendar-event-line' },
         ];
+    const revenueCustomerSection = coord
+      ? {
+          section: 'REVENUE & CUSTOMER',
+          items: [
+            { name: 'Target Revenue', href: '/execution/target-revenue', icon: 'ri-money-dollar-circle-line' },
+            { name: 'Performance Customer', href: '/execution/performance-customer', icon: 'ri-user-star-line' },
+            { name: 'Realisasi Customer', href: '/execution/realisasi-customer', icon: 'ri-user-received-line' },
+            { name: 'Voice of Customer', href: '/execution/voice-of-customer', icon: 'ri-customer-service-line' },
+          ] as NavItem[],
+        }
+      : null;
     return [
+      dashboardSection,
+      ...(revenueCustomerSection ? [revenueCustomerSection] : []),
       { section: 'OPERASIONAL', items: operasionalItems },
     ];
   }, [coord, isSuperadmin]);

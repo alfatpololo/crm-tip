@@ -6,7 +6,7 @@ import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import { useAuth } from '@/contexts/AuthContext';
 
-const COORDINATOR_ONLY_PATHS = ['/execution/activities', '/execution/leads', '/execution/input-task-kpi', '/execution/laporan-kpi'];
+const COORDINATOR_ONLY_PATHS = ['/execution/activities', '/execution/leads', '/execution/input-task-kpi', '/execution/laporan-kpi', '/execution/target-revenue', '/execution/performance-customer', '/execution/realisasi-customer', '/execution/voice-of-customer'];
 const SUPERADMIN_ONLY_PATHS = ['/management/kelola-user', '/management/kelola-produk'];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -22,11 +22,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (loading || pathname === '/login' || pathname === '/register') return;
     if (requireAuth && !user) {
       router.replace('/login');
-      return;
-    }
-    if (requireAuth && user && pathname === '/') {
-      if (isSuperadmin) router.replace('/management/kelola-user');
-      else router.replace('/execution/tasks');
       return;
     }
     const isAdminPath = SUPERADMIN_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));

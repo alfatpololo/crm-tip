@@ -307,8 +307,8 @@ export default function InputLaporanPekerjaan({ activityOptions, teamMembers, pr
                   </td>
                 </tr>
               ) : (
-                filteredLaporan.map((l) => (
-                  <tr key={l.id} className="hover:bg-gray-50/50">
+                filteredLaporan.map((l, index) => (
+                  <tr key={l.id ? `lp-${l.id}-${index}` : `lp-row-${index}`} className="hover:bg-gray-50/50">
                     <td className="py-3.5 px-5 text-sm text-gray-900">{new Date(l.tanggal).toLocaleDateString('id-ID')}</td>
                     <td className="py-3.5 px-5">
                       <span className="inline-flex px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800">
